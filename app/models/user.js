@@ -11,6 +11,7 @@ var User = db.Model.extend({
     bcrypt.genSalt(10, function (err, salt) {
       bcrypt.hash(context.get('password'), salt, null, function (err, hash) {
         context.set('password', hash);
+        context.set('salt', salt);
       });
     });
   }

@@ -2,7 +2,8 @@ var express = require('express');
 var util = require('./lib/utility');
 var partials = require('express-partials');
 var bodyParser = require('body-parser');
-
+var bcrypt = require('bcrypt-nodejs');
+var cookieParser = require('cookie-parser');
 
 var db = require('./app/config');
 var Users = require('./app/collections/users');
@@ -17,6 +18,7 @@ app.set('views', __dirname + '/views');
 app.set('view engine', 'ejs');
 app.use(partials());
 // Parse JSON (uniform resource locators)
+app.use(cookieParser());
 app.use(bodyParser.json());
 // Parse forms (signup/login)
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -25,7 +27,13 @@ app.use(express.static(__dirname + '/public'));
 
 app.get('/', 
 function(req, res) {
-  res.render('login');
+  util.checkSession(req, function (result) {
+    if (result) {
+      res.render('index');
+    } else {
+      res.render('login');
+    }
+  });
 });
 
 app.get('/create', 
@@ -95,13 +103,18 @@ app.post('/signup', function (req, res){
   user.fetch().then(function (model) {
     if (!model) {
       user.save().then(function(data){
-        console.log(data);
+        //send session token along and redirect to main
+        util.createSession(username, function(hash, userhash) {
+          res.cookie('session', hash);
+          res.cookie('userhash', userhash);
+          res.render('index');
+        });
       }).catch(function(err){
         console.log('everything is fine~ no really it is~');
       });
     } else {
-      console.log(model);
-      //respond with error
+      //respond with error, redirect to signup
+      res.render('signup');
     }
   })
 
@@ -114,24 +127,27 @@ app.get('/login', function (req, res) {
 
 app.post('/login', function (req, res){
 
-
   var username = req.body.username;
   var password = req.body.password;
 
   var user = new User({
-    username: username,
-    password: password
+    username: username
   });
-
 
   user.fetch().then(function (model) {
     if (model) {
-      if (model.get('password') === password) {
-        console.log("login");
-        res.render('index');
-      }
-    } else {
-      console.log('you fail at life');
+      bcrypt.compare(password, model.get('password'), function(err, results) {
+        if (results) {
+          //send session token along and redirect to main
+          util.createSession(username, function (hash, userhash) {
+            res.cookie('session', hash);
+            res.cookie('userhash', userhash);
+            res.render('index');
+          });
+        } else {
+          res.render('login');
+        }
+      })
     }
   })
 });
