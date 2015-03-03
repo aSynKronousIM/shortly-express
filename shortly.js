@@ -31,14 +31,20 @@ function(req, res) {
     if (result) {
       res.render('index');
     } else {
-      res.render('login');
+      res.redirect(301, '/login');
     }
   });
 });
 
 app.get('/create', 
 function(req, res) {
-  res.render('index');
+  util.checkSession(req, function (result) {
+    if (result) {
+      res.render('index');
+    } else {
+      res.redirect(301, '/login');
+    }
+  });
 });
 
 app.get('/links', 
@@ -52,32 +58,38 @@ app.post('/links',
 function(req, res) {
   var uri = req.body.url;
 
-  if (!util.isValidUrl(uri)) {
-    console.log('Not a valid url: ', uri);
-    return res.send(404);
-  }
+  util.checkSession(req, function (result) {
+    if (result) {//logged in user can post
+      if (!util.isValidUrl(uri)) {
+        console.log('Not a valid url: ', uri);
+        return res.send(404);
+      }
 
-  new Link({ url: uri }).fetch().then(function(found) {
-    if (found) {
-      res.send(200, found.attributes);
-    } else {
-      util.getUrlTitle(uri, function(err, title) {
-        if (err) {
-          console.log('Error reading URL heading: ', err);
-          return res.send(404);
+      new Link({ url: uri }).fetch().then(function(found) {
+        if (found) {
+          res.send(200, found.attributes);
+        } else {
+          util.getUrlTitle(uri, function(err, title) {
+            if (err) {
+              console.log('Error reading URL heading: ', err);
+              return res.send(404);
+            }
+
+            var link = new Link({
+              url: uri,
+              title: title,
+              base_url: req.headers.origin
+            });
+
+            link.save().then(function(newLink) {
+              Links.add(newLink);
+              res.send(200, newLink);
+            });
+          });
         }
-
-        var link = new Link({
-          url: uri,
-          title: title,
-          base_url: req.headers.origin
-        });
-
-        link.save().then(function(newLink) {
-          Links.add(newLink);
-          res.send(200, newLink);
-        });
       });
+    } else {
+      res.redirect(301, '/login');
     }
   });
 });
@@ -107,14 +119,16 @@ app.post('/signup', function (req, res){
         util.createSession(username, function(hash, userhash) {
           res.cookie('session', hash);
           res.cookie('userhash', userhash);
-          res.render('index');
+          res.redirect(301, '/');
         });
       }).catch(function(err){
+        //if user exists send error messages to client
         console.log('everything is fine~ no really it is~');
+        res.redirect(301, '/signup');
       });
     } else {
-      //respond with error, redirect to signup
-      res.render('signup');
+      //redirect to signup
+      res.redirect(301, '/signup');
     }
   })
 
@@ -142,15 +156,24 @@ app.post('/login', function (req, res){
           util.createSession(username, function (hash, userhash) {
             res.cookie('session', hash);
             res.cookie('userhash', userhash);
-            res.render('index');
+            res.redirect(301, '/');
           });
         } else {
-          res.render('login');
+          res.redirect(301, '/login');
         }
       })
     }
   })
 });
+
+app.get('/logout', function(req, res) {
+  res.cookie('userhash', { expires: new Date(1), path: '/'});
+  res.cookie('session', { expires: new Date(1), path: '/'});
+  res.redirect(301, '/login');
+});
+
+
+
 
 /************************************************************/
 // Handle the wildcard route last - if all other routes fail
@@ -179,6 +202,7 @@ app.get('/*', function(req, res) {
     }
   });
 });
+
 
 console.log('Shortly is listening on 4568');
 app.listen(4568);
