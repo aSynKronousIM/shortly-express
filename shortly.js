@@ -4,6 +4,9 @@ var partials = require('express-partials');
 var bodyParser = require('body-parser');
 var bcrypt = require('bcrypt-nodejs');
 var cookieParser = require('cookie-parser');
+var passport = require('passport');
+var GithubStrategy = require('passport-github').Strategy;
+var session = require('express-session');
 
 var db = require('./app/config');
 var Users = require('./app/collections/users');
@@ -11,8 +14,38 @@ var User = require('./app/models/user');
 var Links = require('./app/collections/links');
 var Link = require('./app/models/link');
 var Click = require('./app/models/click');
+var secrets = require('./app/passport-secrets');
 
 var app = express();
+app.use(session({secret: 'nickisawesome'}));
+app.use(passport.initialize());
+app.use(passport.session());
+
+////BLACKMAGIC////
+passport.use(new GithubStrategy({
+  clientID: secrets.clientID,
+  clientSecret: secrets.clientSecret,
+  callbackURL: 'http://localhost:4568/'
+  },
+  function(accessToken, refreshToken, profile, done) {
+    console.log('egg: ', accessToken);
+    done(null, {accessToken: accessToken, profile: profile});
+    console.log('egg ended');
+    //req.login called
+  }
+));
+
+passport.serializeUser(function(user, done) {
+  //console.log('user: ', user);
+  console.log('chicken', user);
+  done(null, user);
+});
+
+passport.deserializeUser(function(obj, done) {
+  console.log('hello nick', obj);
+  done(null, obj);
+});
+////BLACKMAGIC////
 
 app.set('views', __dirname + '/views');
 app.set('view engine', 'ejs');
@@ -21,11 +54,28 @@ app.use(partials());
 app.use(cookieParser());
 app.use(bodyParser.json());
 // Parse forms (signup/login)
+
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
 
 
-app.get('/', 
+app.get('/auth/github',
+  passport.authenticate('github'),
+function (req, res){
+});
+
+app.get('/auth/github/callback',
+  passport.authenticate('github', { failureRedirect: '/login' }),
+function(req, res) {
+
+});
+
+// app.get('/callback', function (req, res){
+//   res.redirect('/');
+// })
+
+app.get('/',
+  passport.authenticate('github', { failureRedirect: '/login' }),
 function(req, res) {
   util.checkSession(req, function (result) {
     if (result) {
@@ -36,7 +86,8 @@ function(req, res) {
   });
 });
 
-app.get('/create', 
+app.get('/create',
+  passport.authenticate('github', { failureRedirect: '/login' }),
 function(req, res) {
   util.checkSession(req, function (result) {
     if (result) {
@@ -47,14 +98,22 @@ function(req, res) {
   });
 });
 
-app.get('/links', 
+app.get('/links',
+  passport.authenticate('github', { failureRedirect: '/login' }),
 function(req, res) {
   Links.reset().fetch().then(function(links) {
-    res.send(200, links.models);
+    util.checkSession(req, function (result) {
+      if (result) {
+        res.send(200, links.models);
+      } else {
+        res.redirect(301, '/login');
+      }
+    });
   });
 });
 
-app.post('/links', 
+app.post('/links',
+  passport.authenticate('github', { failureRedirect: '/login' }),
 function(req, res) {
   var uri = req.body.url;
 
@@ -132,7 +191,6 @@ app.post('/signup', function (req, res){
     }
   })
 
-
 });
 
 app.get('/login', function (req, res) {
@@ -167,13 +225,13 @@ app.post('/login', function (req, res){
 });
 
 app.get('/logout', function(req, res) {
-  res.cookie('userhash', { expires: new Date(1), path: '/'});
-  res.cookie('session', { expires: new Date(1), path: '/'});
-  res.redirect(301, '/login');
+  //CAN'T LOGOUT~
+  req.logout();
+  //res.redirect('/login');
+  req.session.destroy(function(){
+    res.redirect(301, '/login');
+  });
 });
-
-
-
 
 /************************************************************/
 // Handle the wildcard route last - if all other routes fail
@@ -202,7 +260,6 @@ app.get('/*', function(req, res) {
     }
   });
 });
-
 
 console.log('Shortly is listening on 4568');
 app.listen(4568);

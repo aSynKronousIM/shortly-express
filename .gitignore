@@ -9,3 +9,5 @@ node_modules
 .flooignore
 
 plan
+
+passport-secrets.js
